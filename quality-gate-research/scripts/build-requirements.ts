@@ -8,20 +8,29 @@
 //        - documents without <req>    -> sentences containing a requirement modal (shall/must/should, ...)
 //   3. Filter (length, meta statements about the document itself) and de-duplicate.
 //   4. Deterministically sample ~120 candidates across all documents, in small same-section clusters.
+//      Pairs listed in pinned-pairs.csv (deliberately chosen potential-inconsistency pairs) are always
+//      included and count toward their document's quota; they are marked sampling = PINNED_PAIR.
 //   5. Assign a heuristic target_diagram, write requirements.csv + annotation-template.csv, print QA stats.
 
-import { readFileSync, writeFileSync, readdirSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const RAW_DIR = join(ROOT, "data", "raw", "XMLZIPFile");
 const OUT_REQUIREMENTS = join(ROOT, "data", "sampled", "requirements.csv");
+const OVERRIDES = join(ROOT, "data", "sampled", "target-diagram-overrides.csv");
+const SMOKE = join(ROOT, "data", "fixtures", "smoke.csv");
+const PINNED = join(ROOT, "data", "sampled", "pinned-pairs.csv");
 const OUT_ALL = join(ROOT, "data", "sampled", "candidates-all.csv");
 const OUT_TEMPLATE = join(ROOT, "data", "annotations", "annotation-template.csv");
 
 const SEED = 392;
 const TARGET_SAMPLE = 120;
+// Documents kept in data/raw but excluded from sampling (team decision, see data/sampled/review-notes.md):
+// peering = use-case pre/post-conditions, not requirements; get real = informal student document;
+// peppol = legal/organisational analysis, almost no system requirements.
+const EXCLUDED_DOCS = ["2008 - peering.xml", "2007 - get real 0.2.xml", "2009 - peppol approved.xml"];
 const BASE_QUOTA = 7;
 const MAX_QUOTA = 10;
 const MIN_WORDS = 5;
@@ -151,8 +160,16 @@ const WEAK_MODAL = /\b(will|can)\b/i;
 // Statements about the document itself, leftover IEEE-template guidance and author notes.
 const META = /\b(this (document|section|chapter|srs|specification|appendix)|the (reader|srs)|this software requirements specification|is organi[sz]ed|refer to (section|appendix)|described in (section|chapter)|I think|these may include)\b/i;
 const TEMPLATE_INSTRUCTION = /^["“”'\s]*(Identify|Describe|List|Specify|Refer)\b/;
-// Lead-ins whose list items live in separate elements, e.g. "... shall capture the following information:".
-const DANGLING_LIST = /\bfollowing\b[^.;]*[:.]?\s*(\([MOI]\))?\s*$/i;
+// Lead-ins whose list items live in separate elements, e.g. "... shall capture the following information:",
+// "... in the form of:" or any sentence ending with a colon (optionally followed by an EIRENE marker).
+const DANGLING_LIST = /(\bfollowing\b[^.;]*[:.]?|:)\s*(\([MOI]\))?\s*$/i;
+// A section heading absorbed into the text: a sentence end followed by two or more Capitalised Words and
+// then another sentence start without punctuation, e.g. "... only accessible Reliability and availability A measure ...".
+const ABSORBED_HEADING = /[a-z]\s+[A-Z][a-z]+(?:\s+(?:and|of|or)\s+[a-z]+|\s+[A-Z][a-z]+){0,3}\s+(?:A|An|The|This|These|It)\s+[a-z]/;
+// A list-item label glued to the front of the sentence, e.g. "Monitor level Each subsystem should ...".
+const LEADING_LABEL = /^[A-Z][a-z]+(?:\s+[a-z]+){0,2}\s+(?:A|An|The|This|These|It|Each|All|Every)\s+[a-z]/;
+// An all-caps section heading glued to the front, e.g. "EXTERNAL INTERFACE REQUIREMENTS It should ...".
+const LEADING_CAPS_HEADING = /^(?:[A-Z]{2,}(?:\s+|$)){2,}/;
 // Introductory sections rarely contain requirements, only scope/background prose.
 const SKIP_SECTION = /\b(purpose|scope|references|overview|document conventions|intended audience|product perspective|user classes|definitions|acronyms|abbreviations|glossary|appendix)\b/i;
 // EIRENE marks clauses as (M)andatory, (O)ptional or (I)nformative; informative clauses are not requirements.
@@ -161,11 +178,22 @@ const INFORMATIVE = /\(I\)/;
 const SSS_MARKER = /\s*\[(SSS\d+)\]/;
 const LABEL_PREFIX = /^((Measurement|Specialization|Relationship)\s+)*Requirement\s+(?=[A-Z])/;
 
+// Sentence boundaries: end punctuation followed by a capital. Boundaries inside a pair of straight
+// double quotes are ignored, so quoted UI text such as "You win ! Enter your name : " stays in one unit.
 function splitSentences(text: string): string[] {
-  return text
-    .split(/(?<=[.!?;])\s+(?=[A-Z“"(])/)
-    .map(clean)
-    .filter(Boolean);
+  const out: string[] = [];
+  let start = 0;
+  let inQuote = false;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '"') inQuote = !inQuote;
+    if (inQuote) continue;
+    if (/[.!?;]/.test(text[i]) && /^\s+[A-Z“(]/.test(text.slice(i + 1, i + 4))) {
+      out.push(text.slice(start, i + 1));
+      start = i + 1;
+    }
+  }
+  out.push(text.slice(start));
+  return out.map(clean).filter(Boolean);
 }
 
 // TCS ends every requirement with an [SSSnnn] tag: split on it so each tagged requirement is one unit.
@@ -186,6 +214,7 @@ function isUsable(text: string, section: string): boolean {
   const n = wordCount(text);
   if (n < MIN_WORDS || n > MAX_WORDS) return false;
   if (META.test(text) || TEMPLATE_INSTRUCTION.test(text) || DANGLING_LIST.test(text) || INFORMATIVE.test(text)) return false;
+  if (ABSORBED_HEADING.test(text) || LEADING_LABEL.test(text)) return false;
   if (SKIP_SECTION.test(section)) return false;
   if (!/[a-z]/.test(text)) return false; // all caps headers / table junk
   if (text.startsWith("(")) return false; // sentence split inside a citation, e.g. "(cf. subsection ..."
@@ -203,8 +232,9 @@ function stripLabels(text: string, reqId: string): { text: string; reqId: string
     reqId = reqId || label[1];
   }
   if (reqId && t.startsWith(reqId + " ")) t = t.slice(reqId.length).trimStart();
-  t = t.replace(LABEL_PREFIX, "");
-  t = t.replace(/(\([MO]\))\s+[A-Z][A-Za-z ]{0,40}$/, "$1");
+  t = t.replace(LABEL_PREFIX, "").replace(LEADING_CAPS_HEADING, "");
+  // EIRENE: a sub-heading that followed the clause on the next line, e.g. "... standby 75%. Electromagnetic Compatibility".
+  t = t.replace(/(\([MO]\)|[.%])\s+[A-Z][a-z]+(?: [A-Za-z]+){0,3}$/, "$1");
   return { text: clean(t), reqId };
 }
 
@@ -259,7 +289,14 @@ function mulberry32(seed: number) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-const rand = mulberry32(SEED);
+// One generator per document (seeded from SEED + document name) so that adding, removing or
+// re-extracting one document does not change the sample drawn from the others.
+let rand = mulberry32(SEED);
+function seedFor(doc: string): void {
+  let h = SEED;
+  for (const ch of doc) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  rand = mulberry32(h);
+}
 const randInt = (lo: number, hi: number) => lo + Math.floor(rand() * (hi - lo + 1));
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -292,6 +329,7 @@ function allocateQuotas(counts: Map<string, number>): Map<string, number> {
 // Picks runs of 1–3 consecutive candidates from the same section so related
 // requirements appear together (needed to study potential inconsistency).
 function sampleDoc(cands: Candidate[], quota: number): Candidate[][] {
+  seedFor(cands[0].doc);
   const bySection = new Map<string, Candidate[]>();
   for (const c of cands) {
     if (!bySection.has(c.section)) bySection.set(c.section, []);
@@ -322,10 +360,25 @@ function sampleDoc(cands: Candidate[], quota: number): Candidate[][] {
 const SEQUENCE_CUES = /\b(send|sends|sent|receive[sd]?|transmit(s|ted)?|forward(s|ed)?|notif(y|ies|ied|ication)|request(s|ed)?|respond(s|ed)?|response|repl(y|ies|ied)|messages?|signal(s|led|ling)?|communicat(e|es|ed|ion|ions)|exchanged?|interface with|connects? to|acknowledge[sd]?|inform(s|ed)?|alerts?|quer(y|ies|ied)|calls?|routing)\b/i;
 const CLASS_CUES = /\b(store[sd]?|recorded|be recorded|maintain(s|ed)?|contains?|consists? of|composed of|attributes?|fields?|data (item|element|field)s?|associated with|linked to|link(s|ed)? between|properties|each \w+ (shall |must |should )?(have|has|contain))\b/i;
 
-function targetDiagram(text: string): "USE_CASE" | "CLASS" | "SEQUENCE" {
+type DiagramType = "USE_CASE" | "CLASS" | "SEQUENCE";
+
+function heuristicDiagram(text: string): DiagramType {
   if (SEQUENCE_CUES.test(text)) return "SEQUENCE";
   if (CLASS_CUES.test(text)) return "CLASS";
   return "USE_CASE";
+}
+
+// Manual decisions (Member 1) live in target-diagram-overrides.csv so that a rebuild keeps them.
+function loadOverrides(): Map<string, DiagramType> {
+  const out = new Map<string, DiagramType>();
+  if (!existsSync(OVERRIDES)) return out;
+  for (const line of readFileSync(OVERRIDES, "utf8").split(/\r?\n/).slice(1)) {
+    if (!line.trim()) continue;
+    const [id, diagram] = line.split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
+    if (!["USE_CASE", "CLASS", "SEQUENCE"].includes(diagram)) throw new Error(`${OVERRIDES}: bad diagram for ${id}`);
+    out.set(id, diagram as DiagramType);
+  }
+  return out;
 }
 
 // ---------- CSV ----------
@@ -342,23 +395,66 @@ for (const f of files) {
   allCandidates.push(...extractCandidates(f, collectBlocks(doc)));
 }
 
+// Texts used as smoke fixtures must not appear in the evaluation sample.
+function loadSmokeTexts(): Set<string> {
+  if (!existsSync(SMOKE)) return new Set();
+  const cells = readFileSync(SMOKE, "utf8").match(/"(?:[^"]|"")*"/g) ?? [];
+  return new Set(cells.map((c) => c.slice(1, -1).replace(/""/g, '"')));
+}
+const smokeTexts = loadSmokeTexts();
+
+// Deliberately chosen pairs (potential inconsistency). Each row is matched by the start of its text, plus
+// source_req_id when given (ids such as REQ-6 repeat across sections); exactly one candidate must match.
+interface Pin {
+  pairId: string;
+  candidate: Candidate;
+}
+function loadPinned(candidates: Candidate[]): Pin[] {
+  if (!existsSync(PINNED)) return [];
+  const pins: Pin[] = [];
+  for (const line of readFileSync(PINNED, "utf8").split(/\r?\n/).slice(1)) {
+    if (!line.trim()) continue;
+    const [pairId, doc, reqId, prefix] = line.split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
+    const hits = candidates.filter((c) => c.doc === doc && c.text.startsWith(prefix) && (!reqId || c.reqId === reqId));
+    if (hits.length !== 1) throw new Error(`${PINNED}: ${pairId} "${prefix}" matched ${hits.length} candidates in ${doc}`);
+    pins.push({ pairId, candidate: hits[0] });
+  }
+  return pins;
+}
+const pinned = loadPinned(allCandidates.filter((c) => !EXCLUDED_DOCS.includes(c.doc) && !smokeTexts.has(c.text)));
+const pinnedTexts = new Set(pinned.map((p) => p.candidate.text));
+
 const byDoc = new Map<string, Candidate[]>();
 for (const c of allCandidates) {
+  if (EXCLUDED_DOCS.includes(c.doc) || smokeTexts.has(c.text) || pinnedTexts.has(c.text)) continue;
   if (!byDoc.has(c.doc)) byDoc.set(c.doc, []);
   byDoc.get(c.doc)!.push(c);
 }
-const quotas = allocateQuotas(new Map([...byDoc].map(([d, cs]) => [d, cs.length])));
+for (const p of pinned) if (!byDoc.has(p.candidate.doc)) byDoc.set(p.candidate.doc, []);
+const pinnedCount = (doc: string) => pinned.filter((p) => p.candidate.doc === doc).length;
+const quotas = allocateQuotas(new Map([...byDoc].map(([d, cs]) => [d, cs.length + pinnedCount(d)])));
 
-type Row = Candidate & { id: string; related: string[] };
+type Row = Candidate & { id: string; related: string[]; sampling: "RANDOM" | "PINNED_PAIR" };
 const rows: Row[] = [];
 for (const doc of [...byDoc.keys()].sort()) {
-  const clusters = sampleDoc(byDoc.get(doc)!, quotas.get(doc)!)
-    .map((cl) => [...cl].sort((a, b) => a.order - b.order))
-    .sort((a, b) => a[0].order - b[0].order);
+  const randomQuota = quotas.get(doc)! - pinnedCount(doc);
+  const clusters: { cands: Candidate[]; pairId?: string }[] = [
+    ...pinned.filter((p) => p.candidate.doc === doc).map((p) => ({ cands: [p.candidate], pairId: p.pairId })),
+    ...(randomQuota > 0 ? sampleDoc(byDoc.get(doc)!, randomQuota) : []).map((cl) => ({ cands: [...cl].sort((a, b) => a.order - b.order) })),
+  ].sort((a, b) => a.cands[0].order - b.cands[0].order);
   for (const cl of clusters) {
-    const ids = cl.map((_, i) => `R${String(rows.length + i + 1).padStart(3, "0")}`);
-    cl.forEach((c, i) => rows.push({ ...c, id: ids[i], related: ids.filter((x) => x !== ids[i]) }));
+    const ids = cl.cands.map((_, i) => `R${String(rows.length + i + 1).padStart(3, "0")}`);
+    cl.cands.forEach((c, i) =>
+      rows.push({ ...c, id: ids[i], related: ids.filter((x) => x !== ids[i]), sampling: cl.pairId ? "PINNED_PAIR" : "RANDOM" }),
+    );
   }
+}
+// A pinned row's related ids are the other rows of its pair (usually a different section).
+for (const p of pinned) {
+  const row = rows.find((r) => r.text === p.candidate.text && r.doc === p.candidate.doc)!;
+  row.related = pinned
+    .filter((q) => q.pairId === p.pairId && q !== p)
+    .map((q) => rows.find((r) => r.text === q.candidate.text && r.doc === q.candidate.doc)!.id);
 }
 
 const HEADER = [
@@ -372,23 +468,36 @@ const HEADER = [
   "related_requirement_ids",
   "target_diagram",
   "source_type",
+  "sampling",
 ];
+const overrides = loadOverrides();
+for (const id of overrides.keys()) if (!rows.some((r) => r.id === id)) throw new Error(`${OVERRIDES}: unknown requirement_id ${id}`);
+const targetDiagram = (r: Row) => overrides.get(r.id) ?? heuristicDiagram(r.text);
+
 mkdirSync(dirname(OUT_REQUIREMENTS), { recursive: true });
 writeFileSync(
   OUT_REQUIREMENTS,
-  [csvRow(HEADER), ...rows.map((r) => csvRow([r.id, r.doc, r.section, r.reqId, r.text, r.before, r.after, r.related.join(";"), targetDiagram(r.text), "REAL"]))].join("\n") + "\n",
+  [csvRow(HEADER), ...rows.map((r) => csvRow([r.id, r.doc, r.section, r.reqId, r.text, r.before, r.after, r.related.join(";"), targetDiagram(r), "REAL", r.sampling]))].join("\n") + "\n",
   "utf8",
 );
 
 writeFileSync(
   OUT_ALL,
-  [csvRow(["source_document", "source_section", "source_req_id", "requirement_text"]), ...allCandidates.map((c) => csvRow([c.doc, c.section, c.reqId, c.text]))].join("\n") + "\n",
+  [
+    csvRow(["source_document", "source_section", "source_req_id", "requirement_text", "context_before", "context_after"]),
+    ...allCandidates.map((c) => csvRow([c.doc, c.section, c.reqId, c.text, c.before, c.after])),
+  ].join("\n") + "\n",
   "utf8",
 );
 
 const TEMPLATE_HEADER = ["annotator_id", "requirement_id", "label", "issue_span", "reason", "needs_clarification", "suggested_question", "confidence", "related_requirement_ids"];
 mkdirSync(dirname(OUT_TEMPLATE), { recursive: true });
-writeFileSync(OUT_TEMPLATE, [csvRow(TEMPLATE_HEADER), ...rows.map((r) => csvRow(["", r.id, "", "", "", "", "", "", ""]))].join("\n") + "\n", "utf8");
+try {
+  writeFileSync(OUT_TEMPLATE, [csvRow(TEMPLATE_HEADER), ...rows.map((r) => csvRow(["", r.id, "", "", "", "", "", "", ""]))].join("\n") + "\n", "utf8");
+} catch (e) {
+  // Typically the file is open in Excel; the other outputs are already written.
+  console.error(`WARNING: could not write ${OUT_TEMPLATE} (${(e as NodeJS.ErrnoException).code}); close the file and rebuild.`);
+}
 
 // ---------- QA report (M1.8) ----------
 
@@ -405,11 +514,11 @@ for (const r of rows) {
 
 const count = <T,>(xs: T[]) => xs.reduce((m, x) => m.set(x, (m.get(x) ?? 0) + 1), new Map<T, number>());
 const words = rows.map((r) => wordCount(r.text)).sort((a, b) => a - b);
-console.log(`candidates: ${allCandidates.length} from ${files.length} documents`);
+console.log(`candidates: ${allCandidates.length} from ${files.length} documents (${EXCLUDED_DOCS.length} excluded from sampling)`);
 console.log(`sampled:    ${rows.length} -> ${OUT_REQUIREMENTS}`);
 console.log("per document (sampled/candidates):");
 for (const d of [...byDoc.keys()].sort()) console.log(`  ${String(rows.filter((r) => r.doc === d).length).padStart(3)}/${String(byDoc.get(d)!.length).padEnd(4)} ${d}`);
-console.log("target_diagram:", Object.fromEntries(count(rows.map((r) => targetDiagram(r.text)))));
+console.log(`target_diagram (${overrides.size} manual overrides):`, Object.fromEntries(count(rows.map(targetDiagram))));
 console.log(`words: min ${words[0]}, median ${words[Math.floor(words.length / 2)]}, max ${words[words.length - 1]}`);
-console.log(`in same-section clusters: ${rows.filter((r) => r.related.length).length}`);
+console.log(`in same-section clusters: ${rows.filter((r) => r.sampling === "RANDOM" && r.related.length).length}, pinned pair rows: ${pinned.length}`);
 console.log(problems.length ? `QA problems:\n  ${problems.join("\n  ")}` : "QA: OK");

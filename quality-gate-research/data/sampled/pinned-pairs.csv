@@ -1,0 +1,11 @@
+pair_id,source_document,source_req_id,text_prefix,note
+P1,1998 - themas.xml,,The thermostats shall only provide temperature values,Thermostats only provide values/settings vs. an event records the thermostat that made a request
+P1,1998 - themas.xml,,This system event shall consist of a description of the event type,Thermostats only provide values/settings vs. an event records the thermostat that made a request
+P2,2009 - video search.xml,REQ-6,Query to video link sites will retrieve,Video link results have no length/date vs. results sorted by length/date
+P2,2009 - video search.xml,REQ-8,Results will be arranged in length/date/alphabetical order,Video link results have no length/date vs. results sorted by length/date
+P3,2007-ertms.xml,4.3.9.2,When the traction unit has come to a standstill,Driver releases the emergency brake directly vs. release happens through the train trip acknowledgement
+P3,2007-ertms.xml,4.6.12.4,When the traction unit is stationary the driver shall be required to acknowledge,Driver releases the emergency brake directly vs. release happens through the train trip acknowledgement
+P4,0000 - gamma j.xml,1,The system will do periodic backups through a live internet connection,Backups over the internet vs. backup via another USB drive
+P4,0000 - gamma j.xml,2,The system shall be easy to migrate or backed up via another usb drive,Backups over the internet vs. backup via another USB drive
+P5,2003 - qheadache.xml,,There can be only one user per machine,One user per machine vs. scores kept and displayed for several players
+P5,2003 - qheadache.xml,,The product must display a window with all the player,One user per machine vs. scores kept and displayed for several players
