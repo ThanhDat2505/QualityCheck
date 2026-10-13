@@ -1,0 +1,18 @@
+{
+  "actors": [
+    "driver"
+  ],
+  "classes": [],
+  "useCases": [
+    "adjust contrast of display"
+  ],
+  "operations": [],
+  "relationships": [
+    {
+      "from": "driver",
+      "to": "adjust contrast of display",
+      "type": "association"
+    }
+  ],
+  "messages": []
+}

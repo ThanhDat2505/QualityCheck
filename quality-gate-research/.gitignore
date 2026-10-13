@@ -1,0 +1,5 @@
+node_modules/
+.env
+# mock/smoke runs are reproducible from code and not experimental data
+experiments/smoke/
+experiments/logs/

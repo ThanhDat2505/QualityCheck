@@ -1,0 +1,18 @@
+{
+  "actors": [
+    "driver"
+  ],
+  "classes": [],
+  "useCases": [
+    "select train data entry"
+  ],
+  "operations": [],
+  "relationships": [
+    {
+      "from": "driver",
+      "to": "select train data entry",
+      "type": "association"
+    }
+  ],
+  "messages": []
+}

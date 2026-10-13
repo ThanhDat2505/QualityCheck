@@ -1,0 +1,17 @@
+{
+  "actors": [],
+  "classes": [
+    "telescope control software",
+    "subsystem"
+  ],
+  "useCases": [],
+  "operations": [],
+  "relationships": [],
+  "messages": [
+    {
+      "from": "telescope control software",
+      "to": "subsystem",
+      "name": "move to safe state"
+    }
+  ]
+}

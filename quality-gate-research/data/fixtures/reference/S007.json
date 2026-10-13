@@ -1,0 +1,29 @@
+{
+  "actors": [
+    "customer"
+  ],
+  "classes": [
+    "web store",
+    "payment gateway"
+  ],
+  "useCases": [],
+  "operations": [],
+  "relationships": [],
+  "messages": [
+    {
+      "from": "customer",
+      "to": "web store",
+      "name": "submit card"
+    },
+    {
+      "from": "web store",
+      "to": "payment gateway",
+      "name": "validate credit card"
+    },
+    {
+      "from": "payment gateway",
+      "to": "web store",
+      "name": "return result"
+    }
+  ]
+}

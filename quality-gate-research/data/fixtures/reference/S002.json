@@ -1,0 +1,17 @@
+{
+  "actors": [],
+  "classes": [
+    "message",
+    "message segment"
+  ],
+  "useCases": [],
+  "operations": [],
+  "relationships": [
+    {
+      "from": "message",
+      "to": "message segment",
+      "type": "composition"
+    }
+  ],
+  "messages": []
+}

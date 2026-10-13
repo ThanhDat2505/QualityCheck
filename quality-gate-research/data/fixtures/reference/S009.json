@@ -1,0 +1,18 @@
+{
+  "actors": [
+    "driver"
+  ],
+  "classes": [],
+  "useCases": [
+    "release emergency brake"
+  ],
+  "operations": [],
+  "relationships": [
+    {
+      "from": "driver",
+      "to": "release emergency brake",
+      "type": "association"
+    }
+  ],
+  "messages": []
+}

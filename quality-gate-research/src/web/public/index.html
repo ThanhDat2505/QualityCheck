@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quality Gate Review</title>
+<style>
+  :root { --bg: #f7f7f5; --panel: #fff; --ink: #1f2328; --muted: #5f6670; --line: #d8dadd; --accent: #2457c5; --warn: #9a5b00; --warn-bg: #fff4e0; --ok: #1d7a3a; --ok-bg: #e7f5ec; --err: #b42318; --mark: #ffe58f; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #16181b; --panel: #1f2226; --ink: #e8e9eb; --muted: #a2a8b0; --line: #343840; --accent: #7aa2f7; --warn: #f0b45a; --warn-bg: #3a2c14; --ok: #6fd08c; --ok-bg: #173323; --err: #ff8a80; --mark: #5c4a00; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, sans-serif; }
+  header { padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--panel); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0 auto 0 0; }
+  main { max-width: 860px; margin: 0 auto; padding: 16px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  h2 { font-size: 15px; margin: 0 0 8px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .req { font-size: 17px; padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--bg); border-radius: 4px; }
+  mark { background: var(--mark); color: inherit; padding: 0 2px; border-radius: 2px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .badge.clear { background: var(--ok-bg); color: var(--ok); }
+  .badge.needs { background: var(--warn-bg); color: var(--warn); }
+  .issue { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin: 8px 0; }
+  .issue b { font-size: 12px; letter-spacing: .02em; }
+  label { display: block; font-weight: 600; margin: 12px 0 4px; }
+  textarea, input, select { width: 100%; font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+  button { font: inherit; padding: 8px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .error { color: var(--err); }
+  .state { font-family: ui-monospace, monospace; font-size: 12px; color: var(--muted); }
+  ul.ctx { margin: 4px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Requirement Quality Gate — review</h1>
+  <span class="state" id="state">UNANALYZED</span>
+  <span class="muted" id="cfg"></span>
+</header>
+<main>
+  <section id="screen-input">
+    <h2>1. Requirement</h2>
+    <label for="participant">Participant / session ID (no personal data)</label>
+    <input id="participant" placeholder="e.g. P01" autocomplete="off">
+    <label for="reqSelect">Requirement</label>
+    <select id="reqSelect"></select>
+    <div id="reqPreview" class="row" style="display:block"></div>
+    <div class="row"><button class="primary" id="analyzeBtn">Analyze</button></div>
+  </section>
+
+  <section id="screen-gate" class="hidden">
+    <h2>2. Gate result <span id="statusBadge" class="badge"></span></h2>
+    <div class="req" id="highlighted"></div>
+    <div id="issues"></div>
+    <div class="row" id="clearActions"><button class="primary" id="sendClearBtn">Send to UML pipeline</button></div>
+  </section>
+
+  <section id="screen-answer" class="hidden">
+    <h2>3. Stakeholder response <span class="muted" id="roundInfo"></span></h2>
+    <form id="answerForm"></form>
+    <div class="row"><button class="primary" id="submitAnswersBtn">Submit answers</button></div>
+  </section>
+
+  <section id="screen-confirm" class="hidden">
+    <h2>4. Rewrite confirmation</h2>
+    <p class="muted">Original</p>
+    <div class="req" id="originalText"></div>
+    <p class="muted">Clarified (proposed — nothing is sent until you confirm or edit)</p>
+    <div class="req" id="rewrittenText"></div>
+    <div id="recheckInfo" class="muted"></div>
+    <textarea id="editBox" class="hidden" rows="3"></textarea>
+    <div class="row">
+      <button class="primary" id="confirmBtn">Confirm</button>
+      <button id="editBtn">Edit</button>
+      <button id="saveEditBtn" class="hidden primary">Save edit &amp; confirm</button>
+      <button id="askAgainBtn">Reject / Ask again</button>
+    </div>
+  </section>
+
+  <section id="screen-done" class="hidden">
+    <h2>5. Completed</h2>
+    <div class="req" id="finalText"></div>
+    <p class="muted" id="doneInfo"></p>
+    <div class="row"><button class="primary" id="nextBtn">Next requirement</button></div>
+  </section>
+
+  <section id="screen-error" class="hidden">
+    <h2 class="error">Error</h2>
+    <p id="errorText"></p>
+    <div class="row"><button id="retryBtn">Back to start</button></div>
+  </section>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>

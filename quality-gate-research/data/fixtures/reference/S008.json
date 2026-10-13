@@ -1,0 +1,19 @@
+{
+  "actors": [],
+  "classes": [
+    "driver",
+    "train data"
+  ],
+  "useCases": [],
+  "operations": [
+    "train data.consult"
+  ],
+  "relationships": [
+    {
+      "from": "driver",
+      "to": "train data",
+      "type": "association"
+    }
+  ],
+  "messages": []
+}

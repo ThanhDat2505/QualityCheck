@@ -1,0 +1,30 @@
+{
+  "actors": [
+    "case officer"
+  ],
+  "classes": [],
+  "useCases": [
+    "search case",
+    "retrieve case",
+    "save case"
+  ],
+  "operations": [],
+  "relationships": [
+    {
+      "from": "case officer",
+      "to": "search case",
+      "type": "association"
+    },
+    {
+      "from": "case officer",
+      "to": "retrieve case",
+      "type": "association"
+    },
+    {
+      "from": "case officer",
+      "to": "save case",
+      "type": "association"
+    }
+  ],
+  "messages": []
+}

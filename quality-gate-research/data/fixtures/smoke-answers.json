@@ -1,0 +1,30 @@
+{
+  "_note": "SCRIPTED stakeholder answers for smoke/integration tests only. Written by the team as a stand-in; not real stakeholder input and never used in the main experiment.",
+  "S004": [
+    { "match": "adequate", "answer": "at most 2 seconds for 95% of requests" },
+    { "match": "commonly performed", "answer": "search case, retrieve case and save case" },
+    { "match": "peak", "answer": "500 concurrent users" },
+    { "match": "*", "answer": "The case officer searches, retrieves and saves cases; each takes at most 2 seconds for 95% of requests with up to 500 concurrent users." }
+  ],
+  "S005": [
+    { "match": "quickly", "answer": "within 1 second" },
+    { "match": "danger", "answer": "a hardware fault, an interlock trip or an operator emergency stop" },
+    { "match": "*", "answer": "The telescope control software commands every subsystem to its safe state within 1 second of detecting a hardware fault, an interlock trip or an operator emergency stop." }
+  ],
+  "S006": [
+    { "match": "appropriate", "answer": "for every observation whose instrument configuration changes during the night" },
+    { "match": "*", "answer": "The observation scheduler runs the validity check and the feasibility check during operation whenever the instrument configuration changes." }
+  ],
+  "S007": [
+    { "match": "*", "answer": "The customer submits the card at checkout; the Web Store sends it to the payment gateway, which returns approved or declined; on decline the Web Store shows an error to the customer." }
+  ],
+  "S008": [
+    { "match": "*", "answer": "Train data consists of train running number, train length, maximum train speed, train category and axle load." }
+  ],
+  "S009": [
+    { "match": "*", "answer": "Release while moving below the permitted speed applies only where the national value allows it; otherwise the driver may release the emergency brake only when stationary." }
+  ],
+  "S010": [
+    { "match": "*", "answer": "Release while moving below the permitted speed applies only where the national value allows it; otherwise the driver may release the emergency brake only when stationary." }
+  ]
+}

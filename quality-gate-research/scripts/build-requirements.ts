@@ -24,6 +24,7 @@ const SMOKE = join(ROOT, "data", "fixtures", "smoke.csv");
 const PINNED = join(ROOT, "data", "sampled", "pinned-pairs.csv");
 const OUT_ALL = join(ROOT, "data", "sampled", "candidates-all.csv");
 const OUT_TEMPLATE = join(ROOT, "data", "annotations", "annotation-template.csv");
+const OUT_PILOT = join(ROOT, "data", "pilot", "pilot.csv");
 
 const SEED = 392;
 const TARGET_SAMPLE = 120;
@@ -497,6 +498,29 @@ try {
 } catch (e) {
   // Typically the file is open in Excel; the other outputs are already written.
   console.error(`WARNING: could not write ${OUT_TEMPLATE} (${(e as NodeJS.ErrnoException).code}); close the file and rebuild.`);
+}
+
+// ---------- pilot set (plan section 9) ----------
+// One requirement per included document, disjoint from the evaluation sample, smoke fixtures and pinned
+// pairs. Drawn with a separate seed so it never changes the evaluation sample.
+{
+  const used = new Set(rows.map((r) => `${r.doc}|${r.text}`));
+  const pilot: Candidate[] = [];
+  for (const doc of [...byDoc.keys()].sort()) {
+    seedFor(`pilot|${doc}`);
+    const free = byDoc.get(doc)!.filter((c) => !used.has(`${c.doc}|${c.text}`) && c.text.split(/\s+/).length >= 8);
+    if (free.length) pilot.push(free[Math.floor(rand() * free.length)]);
+  }
+  mkdirSync(dirname(OUT_PILOT), { recursive: true });
+  writeFileSync(
+    OUT_PILOT,
+    [
+      csvRow(HEADER),
+      ...pilot.map((c, i) => csvRow([`P${String(i + 1).padStart(2, "0")}`, c.doc, c.section, c.reqId, c.text, c.before, c.after, "", heuristicDiagram(c.text), "REAL", "PILOT"])),
+    ].join("\n") + "\n",
+    "utf8",
+  );
+  console.log(`pilot:      ${pilot.length} -> ${OUT_PILOT}`);
 }
 
 // ---------- QA report (M1.8) ----------

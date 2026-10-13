@@ -1,0 +1,24 @@
+{
+  "actors": [
+    "observation scheduler"
+  ],
+  "classes": [],
+  "useCases": [
+    "run validity check",
+    "run feasibility check"
+  ],
+  "operations": [],
+  "relationships": [
+    {
+      "from": "observation scheduler",
+      "to": "run validity check",
+      "type": "association"
+    },
+    {
+      "from": "observation scheduler",
+      "to": "run feasibility check",
+      "type": "association"
+    }
+  ],
+  "messages": []
+}
